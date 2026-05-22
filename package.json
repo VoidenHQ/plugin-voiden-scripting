@@ -1,0 +1,22 @@
+{
+  "name": "@voiden/plugin-voiden-scripting",
+  "version": "1.1.0",
+  "type": "module",
+  "private": false,
+  "description": "Pre-request and post-response JavaScript scripting for API requests with vd API access",
+  "main": "./src/plugin.ts",
+  "scripts": {
+    "build": "node build.mjs",
+    "release": "node build.mjs && node generate-manifest.mjs"
+  },
+  "peerDependencies": {
+    "@voiden/sdk": "^1.0.10-beta.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@voiden/sdk": "1.0.10-beta.1",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  }
+}
