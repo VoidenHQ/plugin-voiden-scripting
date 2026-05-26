@@ -17,7 +17,7 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'cjs',
-  outfile: `dist/${pluginId}-main.js`,
+  outfile: `dist/${pluginId}-main.cjs`,
   external: [
     'electron',
     'node:*',
@@ -29,4 +29,4 @@ await build({
   minify: true,
 })
 
-console.log(`Built dist/${pluginId}-main.js`)
+console.log(`Built dist/${pluginId}-main.cjs`)
