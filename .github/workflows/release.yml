@@ -31,4 +31,5 @@ jobs:
             dist/voiden-scripting.js
             dist/voiden-scripting-main.js
             dist/voiden-scripting-runner.js
+            src/skill.md
             manifest.json
