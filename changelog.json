@@ -1,0 +1,49 @@
+[
+  {
+    "version": "v1.1.3",
+    "date": "29/05/2026",
+    "title": "Build Fix",
+    "changes": {
+      "Fixed": [
+        "Remove catch-all shim from build pipeline for correct dependency bundling"
+      ]
+    }
+  },
+  {
+    "version": "v1.1.1",
+    "date": "27/05/2026",
+    "title": "Shim & Docs Fix",
+    "changes": {
+      "Fixed": [
+        "Removed catch-all shim block",
+        "Skill documentation rewritten with accurate API reference for JavaScript, Python, and Shell"
+      ]
+    }
+  },
+  {
+    "version": "v1.1.0",
+    "date": "20/04/2026",
+    "title": "Python & Shell Support",
+    "changes": {
+      "Added": [
+        "Python script execution via post-response hooks",
+        "Shell/bash script support",
+        "voiden.setVariable() and voiden.getVariable() cross-script state"
+      ]
+    }
+  },
+  {
+    "version": "v1.0.0",
+    "date": "01/04/2026",
+    "title": "Initial Release",
+    "description": "Post-response JavaScript scripting for Voiden.",
+    "changes": {
+      "Added": [
+        "JavaScript post-response script execution",
+        "Access to response status, headers, and body",
+        "Runtime variable setting via scripts",
+        "Console output in response panel"
+      ]
+    }
+  }
+]
