@@ -1,5 +1,18 @@
 [
   {
+    "version": "v1.1.4",
+    "date": "10/06/2026",
+    "title": "JSON Body Auto-Parse",
+    "changes": {
+      "Added": [
+        "voiden.response.body is now auto-parsed for JSON responses — access keys directly (e.g. voiden.response.body.userId) in JavaScript and Python without manual JSON.parse()"
+      ],
+      "Fixed": [
+        "Shell scripts continue to receive response body as a raw JSON string (use jq for key extraction)"
+      ]
+    }
+  },
+  {
     "version": "v1.1.3",
     "date": "29/05/2026",
     "title": "Build Fix",

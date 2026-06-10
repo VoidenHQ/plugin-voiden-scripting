@@ -1,3 +1,5 @@
+> A plugin for [Voiden](https://github.com/VoidenHQ) — the developer-first API client.
+
 # Voiden Scripting
 
 Add pre-request and post-response scripts to your API requests in **JavaScript**, **Python**, or **Shell (bash)**. All three languages share the same `voiden.*` API.
@@ -35,7 +37,8 @@ const method     = voiden.request.method;
 // ── Response (post-script only) ────────────────────────────────────────
 const status     = voiden.response.status;       // e.g. 200
 const statusText = voiden.response.statusText;   // e.g. "OK"
-const body       = voiden.response.body;         // string
+const body       = voiden.response.body;         // object (JSON auto-parsed) or string
+const userId     = voiden.response.body.id;      // direct key access works
 const headers    = voiden.response.headers;      // { "content-type": "..." }
 const ms         = voiden.response.time;         // duration in ms
 const bytes      = voiden.response.size;         // bytes
@@ -83,7 +86,8 @@ method      = voiden.request.method
 # ── Response (post-script only) ────────────────────────────────────────
 status      = voiden.response.status
 status_text = voiden.response.statusText
-body        = voiden.response.body
+body        = voiden.response.body      # object (JSON auto-parsed) or string
+user_id     = voiden.response.body.id   # direct key access works
 headers     = voiden.response.headers   # dict
 ms          = voiden.response.time
 bytes_size  = voiden.response.size
@@ -119,6 +123,9 @@ if not voiden.env.get("TOKEN"):
 > **Important:** bash does not use parentheses for function calls.
 > Use `voiden.log "msg"` — **not** `voiden.log("msg")`.
 
+> **Note:** In shell, `voiden.response.body` is always the raw JSON string.
+> Use `jq` to extract keys: `echo "$body" | jq -r '.id'`
+
 ```bash
 # ── Request (pre-script only) ──────────────────────────────────────────
 
@@ -137,7 +144,8 @@ method=$(voiden.request.method)
 
 # ── Response (post-script only) ────────────────────────────────────────
 status=$(voiden.response.status)
-body=$(voiden.response.body)
+body=$(voiden.response.body)         # raw JSON string — use jq to extract keys
+user_id=$(echo "$body" | jq -r '.id')
 ms=$(voiden.response.time)
 
 # ── Environment ────────────────────────────────────────────────────────
@@ -186,7 +194,7 @@ fi
 |---|---|---|
 | `status` | number | HTTP status code |
 | `statusText` | string | Status message (e.g. `"OK"`) |
-| `body` | string | Response body |
+| `body` | string \| object | Response body — JSON responses are auto-parsed, so `voiden.response.body.key` works directly. Non-JSON bodies remain strings. Shell always receives the raw JSON string. |
 | `headers` | object | Response headers as `{ key: value }` |
 | `time` | number | Response duration in milliseconds |
 | `size` | number | Response size in bytes |
@@ -264,3 +272,4 @@ voiden.cancel     // Shell
 - **Pre-scripts** run before the HTTP request is sent. Modifications to `voiden.request.*` affect the outgoing request.
 - **Post-scripts** run after the response is received. `voiden.response.*` is available; `voiden.request.*` is read-only.
 - **Shell scripts** require bash. Avoid JS-style function call syntax with parentheses — bash will treat it as a syntax error.
+- **Response body** is auto-parsed from JSON in JS and Python — access keys directly. In Shell it remains a raw string; use `jq` to extract keys.

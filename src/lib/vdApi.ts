@@ -141,6 +141,8 @@ export function applyVdRequestToState(
 
 /**
  * Build VdResponse from pipeline's RestApiResponseState.
+ * JSON response bodies are auto-parsed so scripts can access keys directly
+ * (e.g. voiden.response.body.userId). Non-JSON bodies remain strings.
  */
 export function buildVdResponse(responseState: any): VdResponse {
   const headers: Record<string, string> = {};
@@ -148,11 +150,19 @@ export function buildVdResponse(responseState: any): VdResponse {
     headers[h.key] = h.value;
   });
 
+  let body = responseState.body;
+  if (typeof body === 'string') {
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed !== null && typeof parsed === 'object') body = parsed;
+    } catch { /* keep as string */ }
+  }
+
   return {
     status: responseState.status,
     statusText: responseState.statusText,
     headers,
-    body: responseState.body,
+    body,
     time: responseState.timing?.duration ?? 0,
     size: responseState.bytesContent ?? 0,
   };
@@ -175,7 +185,11 @@ export function applyVdResponseToState(
     responseState.statusText = vdResponse.statusText;
   }
   if (!isSameJson(current.body, vdResponse.body)) {
-    responseState.body = vdResponse.body;
+    // Serialize objects back to string for the pipeline (display layer expects string)
+    responseState.body =
+      vdResponse.body !== null && typeof vdResponse.body === 'object'
+        ? JSON.stringify(vdResponse.body)
+        : vdResponse.body;
   }
   // Intentionally do not mutate response headers from scripting.
   // This avoids any structural serialization/reformatting of transport headers.
