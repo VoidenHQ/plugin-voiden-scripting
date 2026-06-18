@@ -22,6 +22,8 @@ export interface VdResponse {
   status: number;
   statusText: string;
   headers: Record<string, string>;
+  /** Parsed Set-Cookie headers, keyed by cookie name. Reliable alternative to headers["set-cookie"] for multi-cookie responses. */
+  cookies: Record<string, { value: string; [key: string]: string | boolean }>;
   body: any;
   time: number;
   size: number;

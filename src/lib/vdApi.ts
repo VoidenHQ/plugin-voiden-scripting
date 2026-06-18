@@ -2,6 +2,7 @@
  * Builds the `voiden` API object from pipeline state and applies mutations back.
  */
 
+import { parseCookies } from "@voiden/sdk/shared";
 import type { VdRequest, VdResponse } from "./types";
 
 type KeyValueItem = { key: string; value: string; enabled?: boolean };
@@ -145,10 +146,25 @@ export function applyVdRequestToState(
  * (e.g. voiden.response.body.userId). Non-JSON bodies remain strings.
  */
 export function buildVdResponse(responseState: any): VdResponse {
+  const headerList: Array<{ key: string; value: string }> = responseState.headers || [];
   const headers: Record<string, string> = {};
-  (responseState.headers || []).forEach((h: any) => {
-    headers[h.key] = h.value;
+  const setCookieValues: string[] = [];
+
+  headerList.forEach((h: any) => {
+    if (h.key.toLowerCase() === 'set-cookie') {
+      setCookieValues.push(h.value);
+    } else {
+      headers[h.key] = h.value;
+    }
   });
+
+  // Expose all set-cookie values joined by \n so scripts can inspect them as a string.
+  // Use voiden.response.cookies for reliable per-cookie access.
+  if (setCookieValues.length > 0) {
+    headers['set-cookie'] = setCookieValues.join('\n');
+  }
+
+  const cookies = parseCookies(headerList);
 
   let body = responseState.body;
   if (typeof body === 'string') {
@@ -162,6 +178,7 @@ export function buildVdResponse(responseState: any): VdResponse {
     status: responseState.status,
     statusText: responseState.statusText,
     headers,
+    cookies,
     body,
     time: responseState.timing?.duration ?? 0,
     size: responseState.bytesContent ?? 0,

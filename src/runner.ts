@@ -17,6 +17,7 @@
  */
 
 import type { RunnerFactory, RunnerContext, Block, CliRequestState, CliResponseState } from '@voiden/sdk/runner'
+import { parseCookies } from '@voiden/sdk/shared'
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
@@ -64,15 +65,25 @@ function buildVdRequest(rs: CliRequestState) {
 }
 
 function buildVdResponse(rs: CliResponseState) {
+  const rawHeaders: Array<{ key: string; value: string }> = (rs as any).headers ?? []
   const headers: Record<string, string> = {}
-  // Note: CliResponseState doesn't explicitly have headers in types.ts, but they are often present in metadata or implementation
-  // For now we assume they might be present on the object or we'll need to update the SDK types later.
-  const rawHeaders = (rs as any).headers ?? []
-  rawHeaders.forEach((h: any) => { headers[h.key] = h.value })
+  const setCookieValues: string[] = []
+  rawHeaders.forEach((h: any) => {
+    if (h.key.toLowerCase() === 'set-cookie') {
+      setCookieValues.push(h.value)
+    } else {
+      headers[h.key] = h.value
+    }
+  })
+  if (setCookieValues.length > 0) {
+    headers['set-cookie'] = setCookieValues.join('\n')
+  }
+  const cookies = parseCookies(rawHeaders)
   return {
     status:     rs.status,
     statusText: rs.statusText,
     headers,
+    cookies,
     body:       rs.body,
     time:       rs.durationMs ?? 0,
     size:       rs.size ?? 0,
