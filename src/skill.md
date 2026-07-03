@@ -107,9 +107,8 @@ const parsed = JSON.parse(voiden.response.body); // force parse
 
 ```python
 # Python — plain property access
-import json
 status = voiden.response.status          # number
-body   = json.loads(voiden.response.body)
+body   = voiden.response.body            # dict if JSON, str otherwise — already parsed
 ```
 
 ```bash
@@ -213,16 +212,19 @@ voiden.cancel
 | `voiden.request.pathParams` | `{key,value,enabled?}[]` | Path params — assign to replace all |
 | `voiden.request.pathParams.push({key, value, enabled?})` | — | Append one path param |
 
-#### voiden.response (post_script — read-only)
+#### voiden.response (post_script)
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `voiden.response.status` | `number` | HTTP status code |
-| `voiden.response.statusText` | `string` | HTTP status text (`"OK"`, `"Not Found"`, …) |
-| `voiden.response.headers` | `Record<string,string>` | Response headers object |
-| `voiden.response.body` | `any` | Response body — JSON object if parseable, otherwise string |
-| `voiden.response.time` | `number` | Response time in ms |
-| `voiden.response.size` | `number` | Response size in bytes |
+`status`, `statusText`, and `body` are writable in post_script. `headers`, `cookies`, `time`, and `size` are read-only.
+
+| Property | Type | Writable | Description |
+|----------|------|----------|-------------|
+| `voiden.response.status` | `number` | ✅ | HTTP status code |
+| `voiden.response.statusText` | `string` | ✅ | HTTP status text (`"OK"`, `"Not Found"`, …) |
+| `voiden.response.body` | `any` | ✅ | Response body — JSON object if parseable, otherwise string |
+| `voiden.response.headers` | `Record<string,string>` | ❌ | Response headers object |
+| `voiden.response.cookies` | `Record<string,{value:string,[key:string]:string\|boolean}>` | ❌ | Parsed response cookies |
+| `voiden.response.time` | `number` | ❌ | Response time in ms |
+| `voiden.response.size` | `number` | ❌ | Response size in bytes |
 
 #### voiden utilities
 
@@ -242,7 +244,7 @@ voiden.cancel
 |-------------|-------------|
 | `"=="` / `"eq"` / `"equal"` | Loose equality |
 | `"==="` | Strict equality |
-| `"!="` / `"neq"` / `"notequal"` | Not equal |
+| `"!="` / `"!=="` / `"neq"` / `"notequal"` | Not equal / strict not equal |
 | `">"` / `"greater"` / `"greaterthan"` | Numeric greater than |
 | `">="` / `"gte"` | Greater than or equal |
 | `"<"` / `"less"` / `"lessthan"` | Numeric less than |
@@ -315,12 +317,13 @@ voiden.request.pathParams = {"key": "id", "value": "123"}
 #### voiden.response (post_script)
 
 ```python
-voiden.response.status       # int
-voiden.response.statusText   # str
-voiden.response.headers      # dict {name: value}
-voiden.response.body         # str — use json.loads() to parse
-voiden.response.time         # int ms
-voiden.response.size         # int bytes
+voiden.response.status       # int (writable)
+voiden.response.statusText   # str (writable)
+voiden.response.headers      # dict {name: value} (read-only)
+voiden.response.body         # dict if JSON, str otherwise — already parsed (writable)
+voiden.response.cookies      # dict {name: {value, ...attrs}} (read-only)
+voiden.response.time         # int ms (read-only)
+voiden.response.size         # int bytes (read-only)
 ```
 
 #### voiden utilities
@@ -346,9 +349,7 @@ voiden.request.headers = {"key": "Authorization", "value": f"Bearer {token}"}
 voiden.request.body = json.dumps({"name": "John", "role": "admin"})
 
 # post_script
-import json
-
-data = json.loads(voiden.response.body)
+data = voiden.response.body   # already a dict if JSON response
 voiden.variables.set("CREATED_ID", str(data["id"]))
 
 voiden.assert_(voiden.response.status, "==", 201, "Created")
