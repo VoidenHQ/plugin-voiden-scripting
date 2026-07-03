@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.1.2",
+    "date": "03/07/2026",
+    "title": "Skill Documentation Update",
+    "changes": {
+      "Improved": [
+        "AI skill documentation updated with accurate scripting API reference for JavaScript and Python, including cookies access, correct read-only labels, and !== operator"
+      ]
+    }
+  },
+  {
     "version": "v1.1.4",
     "date": "10/06/2026",
     "title": "JSON Body Auto-Parse",
