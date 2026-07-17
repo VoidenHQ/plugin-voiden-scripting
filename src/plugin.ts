@@ -72,6 +72,20 @@ export default function createVoidenScriptingPlugin(context: CorePluginContext) 
         'post_script': 'Post-Response Script',
       });
 
+      // Root path for now — a per-block deep link path will be added later.
+      (context as any).registerBlockOutlineMeta({
+        pre_script: {
+          label: 'Pre-Request Script',
+          icon: 'Code',
+          docsUrl: 'https://docs.voiden.md/docs/core-features-section/voiden-blocks/pre-post-script/pre-script',
+        },
+        post_script: {
+          label: 'Post-Response Script',
+          icon: 'Code',
+          docsUrl: 'https://docs.voiden.md/docs/core-features-section/voiden-blocks/pre-post-script/post-script',
+        },
+      });
+
       // 4. Register block owners for paste handling
       context.paste.registerBlockOwner({
         blockType: 'pre_script',

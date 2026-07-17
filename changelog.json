@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.1.5",
+    "date": "16/07/2026",
+    "title": "Block Documentation Link",
+    "changes": {
+      "Added": [
+        "An \"Open Documentation\" item now appears in the right-click block menu for Pre-Request Script and Post-Response Script blocks, opening the Voiden Blocks docs in your system browser"
+      ]
+    }
+  },
+  {
     "version": "v1.1.2",
     "date": "03/07/2026",
     "title": "Skill Documentation Update",
