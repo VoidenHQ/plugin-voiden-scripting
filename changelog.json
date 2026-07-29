@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.1.6",
+    "date": "29/07/2026",
+    "title": "Inline Block Help",
+    "changes": {
+      "Added": [
+        "The Pre-Request Script and Post-Response Script blocks now show an inline \"?\" help tooltip in their header, matching the other request blocks"
+      ]
+    }
+  },
+  {
     "version": "v1.1.5",
     "date": "16/07/2026",
     "title": "Block Documentation Link",

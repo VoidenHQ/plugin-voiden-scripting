@@ -34,7 +34,6 @@ export default function createVoidenScriptingPlugin(context: CorePluginContext) 
         CodeEditor,
         RequestBlockHeader,
         context.project.openFile,
-        React.createElement(ScriptHelp.PreScriptHelp),
       );
 
       const PostScriptNode = createScriptNode(
@@ -48,8 +47,14 @@ export default function createVoidenScriptingPlugin(context: CorePluginContext) 
         CodeEditor,
         RequestBlockHeader,
         context.project.openFile,
-        React.createElement(ScriptHelp.PostScriptHelp),
       );
+
+      // Inline block "?" help tooltip (RequestBlockHeader) — same components
+      // used above for the (now-removed) direct helpContent wiring.
+      (context as any).registerBlockHelp?.({
+        pre_script: ScriptHelp.PreScriptHelp,
+        post_script: ScriptHelp.PostScriptHelp,
+      });
 
       // 2. Register TipTap extensions
       context.registerVoidenExtension(PreScriptNode);

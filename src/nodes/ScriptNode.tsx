@@ -116,7 +116,10 @@ const prettifyPython = (code: string): string => {
  * @param CodeEditor - From context.ui.components
  * @param RequestBlockHeader - From context.ui.components
  * @param openFile - From context.project.openFile
- * @param HelpContent - Optional help component
+ *
+ * Help content is looked up automatically via RequestBlockHeader's blockType
+ * prop (config.name) against the block-help registry — register it once via
+ * context.registerBlockHelp instead of passing a component here.
  */
 export const createScriptNode = (
   config: {
@@ -129,7 +132,6 @@ export const createScriptNode = (
   CodeEditor: any,
   RequestBlockHeader: any,
   openFile?: (relativePath: string) => Promise<void>,
-  HelpContent?: React.ReactNode,
 ) => {
   const ScriptNodeView = (props: NodeViewProps) => {
     const [shouldAutofocus, setShouldAutofocus] = React.useState(false);
@@ -170,7 +172,7 @@ export const createScriptNode = (
             editor={props.editor}
             importedDocumentId={props.node.attrs.importedFrom}
             openFile={openFile}
-            helpContent={HelpContent}
+            blockType={config.name}
           />
           <div className="flex items-center justify-end gap-2 px-2 py-1 border-b border-[rgba(0,0,0,0.1)]" contentEditable={false}>
             {!isImported && props.editor.isEditable && (language === 'javascript' || language === 'python') && /* no prettify for shell */ (
