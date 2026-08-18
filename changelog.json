@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.1.7",
+    "date": "18/08/2026",
+    "title": "Cleaner Script Error Traces",
+    "changes": {
+      "Fixed": [
+        "Pre-request and post-response script errors no longer show a raw, unhelpful engine stack trace (e.g. \"at new AsyncFunction (<anonymous>)... at self.onmessage...\"). Errors are now trimmed down to the message plus a clean trace through the user's own script functions, with correct line/column numbers and a \"Pre-request script —\" / \"Post-response script —\" prefix identifying which phase raised it."
+      ]
+    }
+  },
+  {
     "version": "v1.1.6",
     "date": "29/07/2026",
     "title": "Inline Block Help",
