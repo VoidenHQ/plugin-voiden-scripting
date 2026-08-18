@@ -52,44 +52,63 @@ function stripComments(body: string, language: ScriptLanguage): string {
 }
 
 /**
- * Format runtime script errors with line/column when available.
- * Keeps message concise for toast + response panel surfaces.
+ * Format runtime script errors into a clean, user-script-only trace: the
+ * message, then one "at functionName (Line N:C)" per frame that actually
+ * ran inside the user's own script — so a syntax/runtime error shows not
+ * just where it happened but which of the user's own functions led there.
+ * Engine/worker-internal frames (self.onmessage, MessagePort, node:internal/...)
+ * and native calls with no real position (e.g. "at JSON.parse (<anonymous>)")
+ * are dropped; they're never useful to the user and were the entire original
+ * complaint (a raw stack that was ALL such frames, with zero user-script
+ * content, e.g. "at new AsyncFunction (<anonymous>)").
  */
 function formatScriptRuntimeError(rawError: unknown, scriptBody: string, language: ScriptLanguage): string {
   const text = String(rawError || '').trim();
   if (!text) return 'Script execution failed';
 
-  const firstLine = text.split('\n').find(Boolean)?.trim() || 'Script execution failed';
+  const lines = text.split('\n');
+  const messageLine = lines.find(Boolean)?.trim() || 'Script execution failed';
+
+  if (language !== 'javascript') {
+    // Python's own traceback already lists file/line/function per frame in
+    // human-readable form; just surface the message with its own line
+    // number when present, same as before.
+    const pythonLineMatch = text.match(/line\s+(\d+)/i);
+    if (pythonLineMatch) return `Line ${pythonLineMatch[1]}: ${messageLine}`;
+    return messageLine;
+  }
+
+  // `new AsyncFunction('voiden', 'vd', 'require', scriptBody)` compiles to
+  // an implicit `async function anonymous(voiden,vd,require\n) {\n<body>`,
+  // so the user's own source line 1 is compiled-line 3 — every reported
+  // <anonymous>:LINE:COL is always exactly +2 from the user's real line,
+  // not just "when it looks out of range" (a raw line can coincidentally
+  // still fall inside the script's own line count and wrongly skip
+  // adjustment — verified against real V8 stacks from this exact wrapper).
   const scriptLineCount = scriptBody.split('\n').length;
+  const frames: string[] = [];
+  for (const raw of lines.slice(1)) {
+    const posMatch = raw.match(/<anonymous>:(\d+):(\d+)/);
+    if (!posMatch) continue; // not a user-script frame — skip.
 
-  let line: number | undefined;
-  let column: number | undefined;
+    const nameMatch = raw.match(/^\s*at\s+([^(]+?)\s*\(/);
+    let name = nameMatch ? nameMatch[1].trim() : null;
+    if (name === 'eval' || name === '<anonymous>') name = null; // top-level script code, not a user-named function
 
-  const jsAnonymousMatch = text.match(/<anonymous>:(\d+):(\d+)/);
-  if (jsAnonymousMatch) {
-    line = Number(jsAnonymousMatch[1]);
-    column = Number(jsAnonymousMatch[2]);
+    // Clamped, not just offset: if some future engine version ever changes
+    // the wrapper's line overhead, this still can't report a line number
+    // that doesn't exist in the user's own script.
+    const line = Math.min(Math.max(1, Number(posMatch[1]) - 2), scriptLineCount);
+    const col = Number(posMatch[2]);
+    frames.push(name ? `    at ${name} (Line ${line}:${col})` : `    at Line ${line}:${col}`);
   }
 
-  const pythonLineMatch = text.match(/line\s+(\d+)/i);
-  if (!line && pythonLineMatch) {
-    line = Number(pythonLineMatch[1]);
-  }
+  // No user-script frame captured — most commonly a SyntaxError, which
+  // throws at compile time before any of the script ever runs, so there's
+  // no execution position to report at all.
+  if (frames.length === 0) return messageLine;
 
-  // AsyncFunction stacks can include wrapper offset; normalize if obviously outside script body.
-  if (language === 'javascript' && line && line > scriptLineCount) {
-    if (line - 2 > 0 && line - 2 <= scriptLineCount) {
-      line -= 2;
-    } else if (line - 1 > 0 && line - 1 <= scriptLineCount) {
-      line -= 1;
-    }
-  }
-
-  if (line && line > 0) {
-    return `Line ${line}${column ? `:${column}` : ''}: ${firstLine}`;
-  }
-
-  return firstLine;
+  return [messageLine, ...frames].join('\n');
 }
 
 function didScriptChangePayload(before: any, after: any): boolean {
@@ -199,7 +218,14 @@ export async function preSendScriptHook(context: any): Promise<void> {
   // Store logs and errors in metadata
   if (!requestState.metadata) requestState.metadata = {};
   requestState.metadata.preScriptLogs = result.logs;
+  // formatScriptRuntimeError trims the raw engine-wrapper stack (e.g.
+  // "at new AsyncFunction (<anonymous>)... at self.onmessage (...)", which
+  // has no reference to the user's own script) down to the actual line in
+  // the script + message; the "Pre-request script" prefix identifies which
+  // of the two script phases raised it, since a request can have both.
   const preError = result.error
+    ? `Pre-request script — ${formatScriptRuntimeError(result.error, scriptBody, language)}`
+    : undefined;
   if (preError) requestState.metadata.preScriptError = preError;
 
   // Store assertion results
@@ -294,8 +320,10 @@ export async function postProcessScriptHook(context: any): Promise<void> {
 
   // Store logs and errors in response metadata
   responseState.metadata.postScriptLogs = result.logs;
+  // See the matching comment in preSendScriptHook — same cleanup, "Post-response
+  // script" prefix instead since this is the other of the two script phases.
   const postError = (result.error || result.success === false)
-    ? String(result.error || 'Script execution failed')
+    ? `Post-response script — ${formatScriptRuntimeError(result.error || 'Script execution failed', scriptBody, language)}`
     : undefined;
   if (postError) responseState.metadata.postScriptError = postError;
 
