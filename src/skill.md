@@ -28,6 +28,29 @@ attrs:
 
 The scripting object is always called `voiden`. In JavaScript and Python `vd` is an alias for the exact same object. In shell scripts there is no `vd` — only `voiden.xxx` bash functions are created.
 
+### Using a `voiden.variables.set()` Value Outside a Script
+
+`voiden.variables.get(key)` / `voiden.variables.set(key, value)` are only for reading/writing a variable **from inside another script**. To use that same value in a *plain* field — a header, URL, query param, JSON body, anywhere in this or a later request — you need `{{}}` template syntax instead, and the prefix matters:
+
+```
+{{process.KEY}}      ✅ resolves — matches what voiden.variables.set() actually persisted
+{{KEY}}               ❌ never resolves — silently stays as the literal text "{{KEY}}"
+```
+
+`voiden.variables.set()` persists to the same `.voiden/.process.env.json` file the `runtime-variables` block (see the base voiden skill) writes to, and both are read back by the exact same resolver, which **only** matches expressions starting with `process.` — a bare `{{KEY}}` is treated as an unrelated/unresolved environment variable, not an error, so this fails silently rather than throwing.
+
+```javascript
+// post_script (login request) — sets the value
+voiden.variables.set("ACCESS_TOKEN", data.access_token);
+```
+
+```yaml
+# headers-table on a LATER request — no script needed here at all
+row: [Authorization, "Bearer {{process.ACCESS_TOKEN}}", "Set by the login request's post_script"]
+```
+
+Inside a script, keep using `voiden.variables.get("KEY")` directly (no `{{}}`, no `process.` prefix — that's the JS/Python/Shell API, a separate access path from template substitution).
+
 ---
 
 ### Language Syntax Comparison
@@ -234,7 +257,7 @@ voiden.cancel
 |------|-------------|
 | `voiden.env.get(key)` | Get value from active environment |
 | `voiden.variables.get(key)` | Get runtime variable (synchronous) |
-| `voiden.variables.set(key, value)` | Set runtime variable — persists across requests |
+| `voiden.variables.set(key, value)` | Set runtime variable — persists across requests. To use it outside a script, reference `{{process.key}}`, not `{{key}}` — see "Using a voiden.variables.set() Value Outside a Script" above. |
 | `voiden.log(...args)` | Log at `log` level |
 | `voiden.log("warn", ...args)` | Log at `log` / `info` / `debug` / `warn` / `error` |
 | `voiden.assert(actual, op, expected, msg?)` | Record structured assertion |
@@ -340,6 +363,8 @@ voiden.assert_(actual, "==", expected, "message")   # NOT voiden.assert()
 voiden.cancel()
 ```
 
+To use a value set by `voiden.variables.set()` outside a script (a header, URL, body field, etc.), reference `{{process.KEY}}`, not `{{KEY}}` — see "Using a voiden.variables.set() Value Outside a Script" near the top of this file.
+
 ### Python Patterns
 
 ```python
@@ -413,7 +438,7 @@ Env var equivalents: `$VOIDEN_RESPONSE_STATUS`, `$VOIDEN_RESPONSE_STATUS_TEXT`, 
 |------|-------------|
 | `voiden.env.get "KEY"` | Print env variable value |
 | `voiden.variables.get "KEY"` | Print runtime variable value |
-| `voiden.variables.set "KEY" "value"` | Set and persist runtime variable |
+| `voiden.variables.set "KEY" "value"` | Set and persist runtime variable. To use it outside a script, reference `{{process.KEY}}`, not `{{KEY}}` — see "Using a voiden.variables.set() Value Outside a Script" near the top of this file. |
 
 Underscore aliases also work: `voiden_env_get "KEY"`, `voiden_variables_get "KEY"`, `voiden_variables_set "KEY" "value"`
 
