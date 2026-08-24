@@ -5,7 +5,8 @@
     "title": "Cleaner Script Error Traces",
     "changes": {
       "Fixed": [
-        "Pre-request and post-response script errors no longer show a raw, unhelpful engine stack trace (e.g. \"at new AsyncFunction (<anonymous>)... at self.onmessage...\"). Errors are now trimmed down to the message plus a clean trace through the user's own script functions, with correct line/column numbers and a \"Pre-request script —\" / \"Post-response script —\" prefix identifying which phase raised it."
+        "Pre-request and post-response script errors no longer show a raw, unhelpful engine stack trace (e.g. \"at new AsyncFunction (<anonymous>)... at self.onmessage...\"). Errors are now trimmed down to the message plus a clean trace through the user's own script functions, with correct line/column numbers and a \"Pre-request script —\" / \"Post-response script —\" prefix identifying which phase raised it.",
+        "The bundled skill.md now documents that pre_script and post_script are each allowed at most once per request section (independently of each other) — one of each is the normal shape. Previously undocumented, which could lead an AI agent to insert a second pre_script or post_script instead of adding more lines to the existing one."
       ]
     }
   },

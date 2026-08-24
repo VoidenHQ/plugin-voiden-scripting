@@ -2,6 +2,8 @@
 
 Provides `pre_script` and `post_script` blocks for JavaScript, Python, or Shell (bash) execution before/after requests. Insert with `/pre-script` and `/post-script` slash commands.
 
+> **Singleton per section:** `pre_script` and `post_script` are each allowed at most once per section (independently of each other) — one pre-script and one post-script per section is the normal, expected shape. Need to run more logic? Add more lines to the existing script, don't insert a second `pre_script` or `post_script` block.
+
 ### Block Structure
 
 ```yaml
