@@ -25,17 +25,19 @@ import os from "node:os";
 const SCRIPT_TIMEOUT_MS = 10_000;
 
 /**
- * Extended PATH so Electron GUI apps on macOS/Linux find Homebrew / nvm / volta
- * binaries that are absent from the default minimal launch environment.
+ * Fallback extended PATH so Electron GUI apps on macOS/Linux have a chance of
+ * finding Homebrew / nvm / volta / fnm binaries even when the login-shell
+ * resolution below (the primary strategy) is unavailable or fails.
  */
 const EXTENDED_PATH = [
   process.env.PATH || "",
   "/usr/local/bin",
   "/opt/homebrew/bin",
   "/usr/bin",
-  path.join(process.env.HOME || "~", ".nvm/current/bin"),
   path.join(process.env.HOME || "~", ".volta/bin"),
   path.join(process.env.HOME || "~", ".fnm/current/bin"),
+  path.join(process.env.HOME || "~", ".local/bin"),
+  path.join(process.env.HOME || "~", ".pyenv/shims"),
 ].join(path.delimiter);
 
 const COMMON_NODE_PATHS =
@@ -43,40 +45,168 @@ const COMMON_NODE_PATHS =
     ? [
         "C:\\Program Files\\nodejs\\node.exe",
         "C:\\Program Files (x86)\\nodejs\\node.exe",
+        path.join(process.env.LOCALAPPDATA || "", "Volta\\bin\\node.exe"),
+        path.join(process.env.USERPROFILE || "", "scoop\\apps\\nodejs\\current\\node.exe"),
+        path.join(process.env.USERPROFILE || "", "scoop\\shims\\node.exe"),
       ]
     : [
         "/usr/local/bin/node",
         "/opt/homebrew/bin/node",
         "/usr/bin/node",
-        path.join(process.env.HOME || "~", ".nvm/current/bin/node"),
         path.join(process.env.HOME || "~", ".volta/bin/node"),
         path.join(process.env.HOME || "~", ".fnm/current/bin/node"),
         path.join(process.env.HOME || "~", ".local/bin/node"),
       ];
 
-// ─── Binary detection (cached) ────────────────────────────────────────────────
+const COMMON_PYTHON_PATHS =
+  process.platform === "win32"
+    ? [
+        path.join(process.env.LOCALAPPDATA || "", "Programs\\Python\\Python312\\python.exe"),
+        path.join(process.env.LOCALAPPDATA || "", "Programs\\Python\\Python311\\python.exe"),
+        path.join(process.env.USERPROFILE || "", "scoop\\shims\\python.exe"),
+      ]
+    : [
+        "/usr/local/bin/python3",
+        "/opt/homebrew/bin/python3",
+        "/usr/bin/python3",
+        path.join(process.env.HOME || "~", ".pyenv/shims/python3"),
+      ];
+
+// ─── Login-shell PATH resolution ───────────────────────────────────────────────
+//
+// The #1 real-world cause of "Node.js not found" despite `node -v` working
+// fine in a terminal: Electron apps launched from Finder/Dock/Taskbar inherit
+// a minimal PATH (roughly /usr/bin:/bin:/usr/sbin:/sbin) that never sources
+// ~/.zshrc, ~/.bash_profile, nvm.sh, etc. — so nvm/asdf/mise/pyenv-managed
+// installs are invisible no matter how many hardcoded fallback paths we guess.
+// Spawning the user's own $SHELL in login+interactive mode sources those same
+// rc files and gives us their *real* PATH, not a guess. macOS/Linux only —
+// Windows PATH is set via environment variables the OS already inherits
+// correctly, so this specific failure mode doesn't apply there.
+let cachedShellPath: string | null | undefined = undefined; // undefined = not yet attempted this session
+
+async function resolveLoginShellPath(): Promise<string | null> {
+  if (process.platform === "win32") return null;
+  if (cachedShellPath !== undefined) return cachedShellPath;
+
+  const shell = process.env.SHELL || "/bin/zsh";
+  const marker = "__VOIDEN_PATH__";
+  // Note: must be "${PATH}" (braced), not a bare "$PATH" — a shell parses
+  // $PATH immediately followed by more identifier characters (our trailing
+  // marker) as one longer, undefined variable name, silently expanding the
+  // whole thing to nothing. Braces close the reference explicitly. Built via
+  // concatenation, not a template literal, so JS doesn't itself try to
+  // interpolate the literal "${PATH}" meant for the shell.
+  const shellCmd = "echo " + marker + "${PATH}" + marker;
+  try {
+    const result = await new Promise<string | null>((resolve) => {
+      execFile(
+        shell,
+        ["-ilc", shellCmd],
+        { timeout: 5000 },
+        (error, stdout) => {
+          if (error) { resolve(null); return; }
+          const match = new RegExp(`${marker}(.*)${marker}`, "s").exec(stdout);
+          resolve(match ? match[1].trim() : null);
+        },
+      );
+    });
+    cachedShellPath = result;
+    return result;
+  } catch {
+    cachedShellPath = null;
+    return null;
+  }
+}
+
+/**
+ * nvm does NOT create a `~/.nvm/current` symlink by default (that was an
+ * incorrect assumption in earlier versions of this detector) — it works
+ * purely by having nvm.sh mutate PATH in the user's shell rc file, which
+ * resolveLoginShellPath() above already captures. This is a last-resort
+ * fallback for when shell resolution itself fails: read nvm's own default
+ * alias, or fall back to the highest installed version directory.
+ */
+async function resolveNvmNodePath(): Promise<string | null> {
+  if (process.platform === "win32") return null;
+  const nvmDir = process.env.NVM_DIR || path.join(process.env.HOME || "~", ".nvm");
+  const versionsDir = path.join(nvmDir, "versions", "node");
+
+  let targetVersion: string | null = null;
+  try {
+    const alias = (await fs.readFile(path.join(nvmDir, "alias", "default"), "utf-8")).trim();
+    if (/^v?\d+(\.\d+)*$/.test(alias)) targetVersion = alias.startsWith("v") ? alias : `v${alias}`;
+  } catch { /* no alias file, or it points at a non-numeric alias like lts/* — fall through */ }
+
+  try {
+    const entries = await fs.readdir(versionsDir);
+    const versionDirs = entries.filter((e) => /^v\d+\.\d+\.\d+$/.test(e));
+    if (versionDirs.length === 0) return null;
+
+    const pick = targetVersion && versionDirs.includes(targetVersion)
+      ? targetVersion
+      // Highest installed version wins — localeCompare's numeric mode sorts
+      // "v18.9.0" before "v18.10.0" correctly (unlike a plain string sort).
+      : versionDirs.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).at(-1)!;
+
+    const candidate = path.join(versionsDir, pick, "bin", "node");
+    await fs.access(candidate, fsConstants.X_OK);
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Binary detection (cached, revalidated) ────────────────────────────────────
 
 let cachedNodePath: string | null = null;
 let cachedPythonPath: string | null = null;
 
+/** Confirms a previously-cached path is still there and executable before trusting it again. */
+async function stillValid(cached: string | null): Promise<boolean> {
+  if (!cached) return false;
+  try { await fs.access(cached, fsConstants.X_OK); return true; } catch { return false; }
+}
+
+async function whichWithPath(whichCmd: string, bin: string, searchPath: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      whichCmd,
+      [bin],
+      { timeout: 3000, env: { ...process.env, PATH: searchPath } },
+      (error, stdout) => resolve(error || !stdout.trim() ? null : stdout.trim().split(/\r?\n/)[0]),
+    );
+  });
+}
+
+/** Best-known PATH for the spawned script's own env — not just detection. */
+async function runtimeSearchPath(): Promise<string> {
+  const shellPath = await resolveLoginShellPath();
+  return shellPath ? `${shellPath}${path.delimiter}${EXTENDED_PATH}` : EXTENDED_PATH;
+}
+
 async function detectNodePath(): Promise<string | null> {
-  if (cachedNodePath) return cachedNodePath;
+  if (await stillValid(cachedNodePath)) return cachedNodePath;
+  cachedNodePath = null;
 
   const whichCmd = process.platform === "win32" ? "where" : "which";
-  try {
-    const result = await new Promise<string | null>((resolve) => {
-      execFile(
-        whichCmd,
-        ["node"],
-        { timeout: 3000, env: { ...process.env, PATH: EXTENDED_PATH } },
-        (error, stdout) => {
-          resolve(error || !stdout.trim() ? null : stdout.trim().split(/\r?\n/)[0]);
-        },
-      );
-    });
-    if (result) { cachedNodePath = result; return result; }
-  } catch { /* fall through */ }
 
+  // 1. The user's real login-shell PATH — sources nvm/asdf/mise/pyenv rc files, etc.
+  const shellPath = await resolveLoginShellPath();
+  if (shellPath) {
+    const result = await whichWithPath(whichCmd, "node", shellPath);
+    if (result) { cachedNodePath = result; return result; }
+  }
+
+  // 2. Extended-guess PATH (Homebrew, volta, fnm, common dirs)
+  const result = await whichWithPath(whichCmd, "node", EXTENDED_PATH);
+  if (result) { cachedNodePath = result; return result; }
+
+  // 3. nvm's actual on-disk layout (no `current` symlink assumed)
+  const nvmPath = await resolveNvmNodePath();
+  if (nvmPath) { cachedNodePath = nvmPath; return nvmPath; }
+
+  // 4. Hardcoded common install locations, as a last resort
   for (const candidate of COMMON_NODE_PATHS) {
     try {
       await fs.access(candidate, fsConstants.X_OK);
@@ -88,17 +218,24 @@ async function detectNodePath(): Promise<string | null> {
 }
 
 async function detectPythonPath(): Promise<string | null> {
-  if (cachedPythonPath) return cachedPythonPath;
+  if (await stillValid(cachedPythonPath)) return cachedPythonPath;
+  cachedPythonPath = null;
 
   const whichCmd = process.platform === "win32" ? "where" : "which";
-  for (const candidate of ["python3", "python"]) {
-    try {
-      const result = await new Promise<string | null>((resolve) => {
-        execFile(whichCmd, [candidate], { timeout: 3000 }, (error, stdout) => {
-          resolve(error || !stdout.trim() ? null : candidate);
-        });
-      });
+
+  const shellPath = await resolveLoginShellPath();
+  for (const searchPath of [shellPath, EXTENDED_PATH].filter((p): p is string => !!p)) {
+    for (const candidate of ["python3", "python"]) {
+      const result = await whichWithPath(whichCmd, candidate, searchPath);
       if (result) { cachedPythonPath = result; return result; }
+    }
+  }
+
+  for (const candidate of COMMON_PYTHON_PATHS) {
+    try {
+      await fs.access(candidate, fsConstants.X_OK);
+      cachedPythonPath = candidate;
+      return candidate;
     } catch { continue; }
   }
   return null;
@@ -186,7 +323,11 @@ export default function createVoidenScriptingMainPlugin(
           if (!nodePath) {
             return {
               success: false, logs: [],
-              error: "Node.js not found. Ensure node is in your PATH.",
+              error:
+                "Node.js not found. Checked your login shell's PATH, Homebrew/volta/fnm locations, " +
+                "nvm's installed versions, and common install paths — none had a working `node`. " +
+                "If Node is installed somewhere else, add it to your shell's PATH (the same PATH " +
+                "`node -v` in a terminal resolves) and restart Voiden.",
               cancelled: false, exitCode: -1,
             };
           }
@@ -206,13 +347,14 @@ export default function createVoidenScriptingMainPlugin(
             ...payload,
             variables: { ...baseVariables, ...(payload.variables || {}) },
           };
+          const searchPath = await runtimeSearchPath();
 
           return new Promise<ScriptResult>((resolve) => {
             const child = spawn(nodePath, ["-e", nodeHostWrapper], {
               timeout: SCRIPT_TIMEOUT_MS,
               stdio: ["pipe", "pipe", "pipe"],
               cwd: projectPath || undefined,
-              env: { ...process.env, PATH: EXTENDED_PATH },
+              env: { ...process.env, PATH: searchPath },
             });
 
             let stdout = "";
@@ -271,7 +413,11 @@ export default function createVoidenScriptingMainPlugin(
           if (!pythonPath) {
             return {
               success: false, logs: [],
-              error: "Python not found. Install Python 3 or ensure python3/python is in your PATH.",
+              error:
+                "Python not found. Checked your login shell's PATH, Homebrew/pyenv locations, " +
+                "and common install paths for `python3`/`python` — none had a working interpreter. " +
+                "If Python is installed somewhere else, add it to your shell's PATH (the same PATH " +
+                "`python3 --version` in a terminal resolves) and restart Voiden.",
               cancelled: false, exitCode: -1,
             };
           }
@@ -291,12 +437,14 @@ export default function createVoidenScriptingMainPlugin(
             ...payload,
             variables: { ...baseVariables, ...(payload.variables || {}) },
           };
+          const searchPath = await runtimeSearchPath();
 
           return new Promise<ScriptResult>((resolve) => {
             const child = spawn(pythonPath, ["-c", pythonWrapper], {
               timeout: SCRIPT_TIMEOUT_MS,
               stdio: ["pipe", "pipe", "pipe"],
               cwd: projectPath || undefined,
+              env: { ...process.env, PATH: searchPath },
             });
 
             let stdout = "";
