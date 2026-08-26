@@ -174,9 +174,9 @@ voiden.assert(voiden.response.time, "<", 500, "Under 500ms");
 ```
 
 ```python
-# Python — voiden.assert_() because assert is a reserved keyword
-voiden.assert_(voiden.response.status, "==", 200, "Expect 200 OK")
-voiden.assert_(voiden.response.time, "<", 500, "Under 500ms")
+# Python — same spelling as every other language
+voiden.assert(voiden.response.status, "==", 200, "Expect 200 OK")
+voiden.assert(voiden.response.time, "<", 500, "Under 500ms")
 ```
 
 ```bash
@@ -310,8 +310,7 @@ voiden.assert(voiden.response.headers["content-type"], "contains", "application/
 
 ### Python API Reference
 
-Python has the same property names as JavaScript. The one difference:
-- Use `voiden.assert_(...)` — `assert` is a reserved keyword in Python
+Python has the same property names as JavaScript, including `voiden.assert(...)` — the runtime rewrites it internally since `assert` is a reserved keyword in Python, but that's invisible plumbing; write it exactly the same as JavaScript. The one real difference:
 - Assign headers/params directly rather than using push
 
 #### voiden.request (pre_script)
@@ -359,7 +358,7 @@ voiden.variables.get("KEY")
 voiden.variables.set("KEY", value)
 voiden.log("message")
 voiden.log("warn", "message")
-voiden.assert_(actual, "==", expected, "message")   # NOT voiden.assert()
+voiden.assert(actual, "==", expected, "message")
 voiden.cancel()
 ```
 
@@ -379,8 +378,8 @@ voiden.request.body = json.dumps({"name": "John", "role": "admin"})
 data = voiden.response.body   # already a dict if JSON response
 voiden.variables.set("CREATED_ID", str(data["id"]))
 
-voiden.assert_(voiden.response.status, "==", 201, "Created")
-voiden.assert_(voiden.response.time, "<", 1000, "Under 1s")
+voiden.assert(voiden.response.status, "==", 201, "Created")
+voiden.assert(voiden.response.time, "<", 1000, "Under 1s")
 ```
 
 ---

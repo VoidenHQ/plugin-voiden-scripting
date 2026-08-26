@@ -422,6 +422,7 @@ export function validateScript(scriptBody: string): ScriptValidationError[] {
           line: i + 1,
           column: call.column,
           method: call.method,
+          severity: 'warning',
           message: `Unknown function '${call.method}()'. Supported: voiden.env.get, voiden.variables.get/set, voiden.request.headers/queryParams/pathParams.push, voiden.log, voiden.assert, voiden.cancel.`,
         });
         continue;
@@ -561,12 +562,19 @@ export function validatePythonScript(scriptBody: string): ScriptValidationError[
     }
 
     // Detect unknown vd function calls + argument lint for supported calls.
+    // voiden.assert is the same spelling as every other language here too —
+    // the runtime's own Python wrapper rewrites `voiden.assert(` to its
+    // internal `voiden.assert_(` right before execution (assert is a
+    // reserved keyword in Python, so `.assert` can't be written directly),
+    // but that's invisible plumbing a user should never type themselves, so
+    // the linter must not recognize or suggest `assert_`.
     for (const call of findVdCallsWithArgs(cleaned)) {
       if (!SUPPORTED_VD_CALLS.has(call.method)) {
         errors.push({
           line: i + 1,
           column: call.column,
           method: call.method,
+          severity: 'warning',
           message: `Unknown function '${call.method}()'. Supported: voiden.env.get, voiden.variables.get/set, voiden.request.headers/queryParams/pathParams.push, voiden.log, voiden.assert, voiden.cancel.`,
         });
         continue;
