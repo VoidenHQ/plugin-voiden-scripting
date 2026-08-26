@@ -17,16 +17,16 @@ attrs:
 ---
 ```
 
-| `language` value | Runtime | Alias available |
-|-----------------|---------|-----------------|
-| `javascript` | Node.js worker | `voiden` and `vd` both work |
-| `python` | Python subprocess | `voiden` and `vd` both work |
-| `shell` | bash subprocess | `voiden` only — **`vd` does not exist in bash** |
+| `language` value | Runtime |
+|-----------------|---------|
+| `javascript` | Node.js worker |
+| `python` | Python subprocess |
+| `shell` | bash subprocess |
 
 - **pre_script** — runs before the HTTP request is sent; can modify `voiden.request.*`
 - **post_script** — runs after the response arrives; can read `voiden.response.*`
 
-The scripting object is always called `voiden`. In JavaScript and Python `vd` is an alias for the exact same object. In shell scripts there is no `vd` — only `voiden.xxx` bash functions are created.
+The scripting object is always called `voiden` in every language (JavaScript, Python, and Shell).
 
 ### Using a `voiden.variables.set()` Value Outside a Script
 
@@ -387,7 +387,7 @@ voiden.assert_(voiden.response.time, "<", 1000, "Under 1s")
 
 ### Shell (Bash) API Reference
 
-Shell scripts run in bash. The entire `voiden.*` API is injected as bash functions before your script runs. Call them with **space-separated arguments** and **no parentheses**. There is no `vd` alias — only `voiden.xxx`.
+Shell scripts run in bash. The entire `voiden.*` API is injected as bash functions before your script runs. Call them with **space-separated arguments** and **no parentheses**.
 
 #### voiden.request (pre_script)
 
