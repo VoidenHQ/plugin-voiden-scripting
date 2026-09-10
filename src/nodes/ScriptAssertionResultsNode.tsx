@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Node } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
+import { Check, Copy } from "lucide-react";
 export interface ScriptAssertionResultsAttrs {
   results: Array<{ passed: boolean; message: string; condition?: string; actualValue?: any; operator?: string; expectedValue?: any; reason?: string }>;
   totalAssertions: number;
@@ -15,6 +16,7 @@ export const createScriptAssertionResultsNode = (NodeViewWrapper: any, useParent
     const { openNodes } = useParentResponseDoc(editor, getPos);
     const isCollapsed = !openNodes.includes("script-assertion-results");
     const [expanded, setExpanded] = React.useState<Record<number, boolean>>({});
+    const [copied, setCopied] = React.useState(false);
 
     const stringifyValue = (value: any) => {
       if (value === undefined) return "undefined";
@@ -66,6 +68,8 @@ export const createScriptAssertionResultsNode = (NodeViewWrapper: any, useParent
     const handleCopy = async () => {
       const text = results.map((r, idx) => assertionToCopyText(r, idx)).join("\n\n");
       await copyText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
     };
 
     const passRate = totalAssertions > 0
@@ -125,10 +129,11 @@ export const createScriptAssertionResultsNode = (NodeViewWrapper: any, useParent
                     e.stopPropagation();
                     handleCopy();
                   }}
-                  className="px-3 py-1 text-xs text-comment hover:bg-active/50 rounded"
+                  className="p-1 text-comment hover:text-text hover:bg-active/50 rounded transition-colors"
                   style={{ cursor: "pointer", userSelect: "none" }}
+                  title={copied ? "Copied" : "Copy assertions"}
                 >
-                  Copy
+                  {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
               )}
             </div>
