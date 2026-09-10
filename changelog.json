@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.1.8",
+    "date": "10/09/2026",
+    "title": "Fix: Runner Crashed When Downloaded Standalone",
+    "changes": {
+      "Fixed": [
+        "The headless runner bundle (voiden-scripting-runner.js — what voiden-runner/@voiden/mcp actually load for pre_script/post_script execution) had a static top-level import of parseCookies from @voiden/sdk/shared. That package is deliberately marked external in build-runner.mjs (avoids bundling the whole SDK into every plugin's runner) — fine inside the Electron app or a real @voiden/runner npm install, both of which have @voiden/sdk genuinely resolvable in their own node_modules, but this bundle is also downloaded standalone into ~/.voiden/extensions/voiden-scripting/runner.js by plugin install/update (npx @voiden/mcp, npx @voiden/runner, an MCP client's install_plugin tool, etc.), with no node_modules of its own alongside it. A static import fires require() the instant the module loads and crashed outright — silently, since the plugin loader wraps every plugin's import in a try/catch, dropping voiden-scripting out of the active plugin set with no visible error short of --verbose. Not platform-specific — reproduced and fixed the same way regardless of OS. Fixed by inlining the same small, dependency-free cookie-parsing logic directly into runner.ts, removing the only runtime @voiden/sdk reference this bundle had.",
+        "The headless script engine's Node.js/Python/bash subprocess detection relied on bare PATH lookups with no fallback — the exact class of bug already fixed for the Electron app's own script execution (login-shell PATH resolution for nvm/asdf/mise/pyenv-managed installs), but never ported to this, the actual engine voiden-runner/mcp-stdio use. A genuinely-installed runtime invisible to the minimal PATH an MCP client's own subprocess inherits would silently fail Python detection or hang a Node/shell script until the 10s timeout with a misleading \"Timed out\" error instead of the real \"command not found\" cause. Now resolves PATH the same robust way the Electron engine does, and surfaces a real spawn failure immediately instead of masking it as a timeout."
+      ]
+    }
+  },
+  {
     "version": "v1.1.7",
     "date": "18/08/2026",
     "title": "Cleaner Script Error Traces",

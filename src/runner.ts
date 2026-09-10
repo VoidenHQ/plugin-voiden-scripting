@@ -17,12 +17,64 @@
  */
 
 import type { RunnerFactory, RunnerContext, Block, CliRequestState, CliResponseState } from '@voiden/sdk/runner'
-import { parseCookies } from '@voiden/sdk/shared'
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Parses a single cookie attribute (e.g. "Path=/api" or "Secure"). */
+function parseCookieAttribute(attributeString: string): [string, string | boolean] {
+  const equalIndex = attributeString.indexOf('=')
+  if (equalIndex === -1) return [attributeString, true] // boolean attribute (e.g. Secure, HttpOnly)
+  return [attributeString.substring(0, equalIndex).trim(), attributeString.substring(equalIndex + 1).trim()]
+}
+
+/** Parses a single Set-Cookie header value into name + attributes. */
+function parseSingleCookie(cookieString: string): { name: string; attributes: Record<string, string | boolean> } | null {
+  const parts = cookieString.split(';').map((part) => part.trim())
+  if (parts.length === 0) return null
+  const firstEqualsIndex = parts[0].indexOf('=')
+  const cookieName = parts[0].substring(0, firstEqualsIndex).trim()
+  const cookieValue = parts[0].substring(firstEqualsIndex + 1).trim()
+  if (!cookieName) return null
+  const attributes: Record<string, string | boolean> = { value: cookieValue }
+  for (let i = 1; i < parts.length; i++) {
+    const [attrName, attrValue] = parseCookieAttribute(parts[i])
+    attributes[attrName] = attrValue
+  }
+  return { name: cookieName, attributes }
+}
+
+/**
+ * Parses Set-Cookie header(s) into a structured object — inlined copy of
+ * @voiden/sdk/shared's own parseCookies(), not imported from there. That
+ * package is deliberately marked `external` in build-runner.mjs (avoids
+ * bundling the whole SDK into every plugin's runner), which is fine for the
+ * Electron app and a real @voiden/runner npm install (both have @voiden/sdk
+ * genuinely resolvable in their own node_modules) — but this bundle is also
+ * downloaded standalone into ~/.voiden/extensions/<id>/runner.js by
+ * `plugin install`/`update` (npx @voiden/mcp, npx @voiden/runner, etc.),
+ * with no node_modules of its own alongside it. A static top-level import
+ * from an external, unresolvable package there fires require() the moment
+ * this module loads and crashes it outright — silently, since the plugin
+ * loader wraps every plugin's import in a try/catch (see registerFixedTools's
+ * own comment) — dropping voiden-scripting out of activePlugins with no
+ * visible error short of --verbose. Inlining this one small, dependency-free
+ * function removes the only runtime @voiden/sdk reference this file had
+ * (the @voiden/sdk/runner import above is `import type` — compile-time
+ * only, erased by the build, never a real require() at all).
+ */
+function parseCookies(headers: Array<{ key: string; value: string }> | undefined): Record<string, Record<string, string | boolean>> {
+  if (!headers || !Array.isArray(headers)) return {}
+  const cookies: Record<string, Record<string, string | boolean>> = {}
+  headers
+    .filter((header) => header.key.toLowerCase() === 'set-cookie')
+    .map((header) => parseSingleCookie(header.value))
+    .filter((cookie): cookie is { name: string; attributes: Record<string, string | boolean> } => cookie !== null)
+    .forEach((cookie) => { cookies[cookie.name] = cookie.attributes })
+  return cookies
+}
 
 function extractScript(doc: any, nodeType: string): { body: string; language: string } | null {
   if (!doc?.content) return null
