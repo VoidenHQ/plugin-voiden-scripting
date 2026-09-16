@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.1.9",
+    "date": "16/09/2026",
+    "title": "Fix: Large Script Output Truncated",
+    "changes": {
+      "Fixed": [
+        "A script producing a large result (e.g. a base64-encoded file) could crash with \"Failed to parse Node.js output\" — output is now fully flushed before the process exits — contributed by [@dawNotPoi](https://github.com/dawNotPoi)"
+      ]
+    }
+  },
+  {
     "version": "v1.1.8",
     "date": "10/09/2026",
     "title": "Fix: Runner Crashed When Downloaded Standalone",
