@@ -165,6 +165,11 @@ export const nodeHostWrapperSource = `
 'use strict';
 var Worker = require('worker_threads').Worker;
 var _chunks = [];
+function _writeResult(result, exitCode) {
+  process.stdout.write(JSON.stringify(result) + '\\n', function() {
+    process.exit(exitCode);
+  });
+}
 process.stdin.on('data', function(c) { _chunks.push(c); });
 process.stdin.on('end', function() {
   var _input = JSON.parse(Buffer.concat(_chunks).toString('utf-8'));
@@ -183,23 +188,20 @@ process.stdin.on('end', function() {
 
   var _timeout = setTimeout(function() {
     _worker.terminate();
-    process.stdout.write(JSON.stringify({ success: false, logs: [], error: 'Script execution timed out after 10000ms', cancelled: false, modifiedVariables: {} }) + '\\n');
-    process.exit(1);
+    _writeResult({ success: false, logs: [], error: 'Script execution timed out after 10000ms', cancelled: false, modifiedVariables: {} }, 1);
   }, 10000);
 
   _worker.on('message', function(msg) {
     if (msg.type === 'done') {
       clearTimeout(_timeout);
-      process.stdout.write(JSON.stringify({ success: msg.success, logs: msg.logs || [], assertions: msg.assertions || [], cancelled: msg.cancelled || false, error: msg.error, modifiedRequest: msg.modifiedRequest, modifiedResponse: msg.modifiedResponse, modifiedVariables: msg.modifiedVariables || {} }) + '\\n');
       _worker.terminate();
-      process.exit(msg.success ? 0 : 1);
+      _writeResult({ success: msg.success, logs: msg.logs || [], assertions: msg.assertions || [], cancelled: msg.cancelled || false, error: msg.error, modifiedRequest: msg.modifiedRequest, modifiedResponse: msg.modifiedResponse, modifiedVariables: msg.modifiedVariables || {} }, msg.success ? 0 : 1);
     }
   });
 
   _worker.on('error', function(err) {
     clearTimeout(_timeout);
-    process.stdout.write(JSON.stringify({ success: false, logs: [], error: err.stack || err.message || String(err), cancelled: false, modifiedVariables: {} }) + '\\n');
-    process.exit(1);
+    _writeResult({ success: false, logs: [], error: err.stack || err.message || String(err), cancelled: false, modifiedVariables: {} }, 1);
   });
 
   _worker.postMessage({ type: 'start', script: _input.scriptBody, request: _input.request || {}, response: _input.response || null, envData: _envData, variablesData: _variablesData });
