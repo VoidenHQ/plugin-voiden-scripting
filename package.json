@@ -7,7 +7,7 @@
   "main": "./src/plugin.ts",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test",
     "release": "node build.mjs && node generate-manifest.mjs"
   },
   "peerDependencies": {
