@@ -19,6 +19,7 @@ import fs from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { writeWrapperFile, type WrapperFile } from "./lib/wrapperFile";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -349,8 +350,19 @@ export default function createVoidenScriptingMainPlugin(
           };
           const searchPath = await runtimeSearchPath();
 
+          let wrapper: WrapperFile;
+          try {
+            wrapper = await writeWrapperFile(nodeHostWrapper, ".cjs");
+          } catch (err: any) {
+            return {
+              success: false, logs: [],
+              error: `Failed to write Node.js wrapper to a temp file: ${err?.message || err}`,
+              cancelled: false, exitCode: -1,
+            };
+          }
+
           return new Promise<ScriptResult>((resolve) => {
-            const child = spawn(nodePath, ["-e", nodeHostWrapper], {
+            const child = spawn(nodePath, [wrapper.file], {
               timeout: SCRIPT_TIMEOUT_MS,
               stdio: ["pipe", "pipe", "pipe"],
               cwd: projectPath || undefined,
@@ -400,7 +412,7 @@ export default function createVoidenScriptingMainPlugin(
 
             child.stdin.write(JSON.stringify(mergedPayload));
             child.stdin.end();
-          });
+          }).finally(wrapper.cleanup);
         },
       );
 

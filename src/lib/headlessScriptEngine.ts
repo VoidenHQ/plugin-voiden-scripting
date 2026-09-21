@@ -18,6 +18,7 @@ import { access } from 'fs/promises'
 import { join, delimiter } from 'path'
 import { tmpdir, homedir } from 'os'
 import { workerSource, nodeHostWrapperSource, pythonWrapperSource, buildBashScript } from './scriptEngine.js'
+import { writeWrapperFile } from './wrapperFile.js'
 import type { ScriptExecutionResult, ScriptLog } from './types.js'
 
 export type HeadlessScriptLanguage = 'javascript' | 'python' | 'shell'
@@ -317,8 +318,13 @@ async function executeNodeWorker(
     variables,
   })
   const searchPath = await getResolvedSearchPath()
-  const { stdout, stderr, code } = await runSubprocess('node', ['-e', nodeHostWrapperSource], payload, searchPath)
-  return parseSubprocessResult(stdout, stderr, code)
+  const wrapper = await writeWrapperFile(nodeHostWrapperSource, '.cjs')
+  try {
+    const { stdout, stderr, code } = await runSubprocess('node', [wrapper.file], payload, searchPath)
+    return parseSubprocessResult(stdout, stderr, code)
+  } finally {
+    await wrapper.cleanup()
+  }
 }
 
 // ── Python subprocess ─────────────────────────────────────────────────────────
