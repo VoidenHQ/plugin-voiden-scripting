@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.1.10",
+    "date": "21/09/2026",
+    "title": "Fix: Script Failed on Some Windows Setups",
+    "changes": {
+      "Fixed": [
+        "On some Windows setups (e.g. Node managed by NVM Desktop, whose node.exe launches Node through cmd.exe), every script failed with \"Failed to parse Node.js output:\" and an empty body — cmd.exe cut the multi-line script wrapper at its first newline, so Node ran nothing. The wrapper is now run from a temp file instead of being passed on the command line, in both the app and the headless runner ([#554](https://github.com/VoidenHQ/voiden/issues/554))"
+      ]
+    }
+  },
+  {
     "version": "v1.1.9",
     "date": "16/09/2026",
     "title": "Fix: Large Script Output Truncated",
