@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.1.11",
+    "date": "23/09/2026",
+    "title": "Catch Non-Async 'await' Before the Script Runs",
+    "changes": {
+      "Added": [
+        "Using 'await' inside a non-async function is now caught before the script runs, reporting the exact line and a scope-chain trace instead of an opaque runtime SyntaxError"
+      ]
+    }
+  },
+  {
     "version": "v1.1.10",
     "date": "21/09/2026",
     "title": "Fix: Script Failed on Some Windows Setups",
