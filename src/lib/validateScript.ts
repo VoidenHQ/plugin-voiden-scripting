@@ -361,6 +361,358 @@ function stripLineComments(line: string): string {
   return result;
 }
 
+/** Replace string/comment contents with spaces, preserving length and newlines. */
+function maskStringsAndComments(source: string): string {
+  let result = '';
+  let inString: string | null = null;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let escaped = false;
+
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    const next = source[i + 1];
+
+    if (inLineComment) {
+      result += ch === '\n' ? '\n' : ' ';
+      if (ch === '\n') inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') {
+        inBlockComment = false;
+        result += '  ';
+        i++;
+      } else {
+        result += ch === '\n' ? '\n' : ' ';
+      }
+      continue;
+    }
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        result += ' ';
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        result += ' ';
+        continue;
+      }
+      if (ch === inString) inString = null;
+      result += ch === '\n' ? '\n' : ' ';
+      continue;
+    }
+
+    if (ch === '/' && next === '/') {
+      inLineComment = true;
+      result += '  ';
+      i++;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      inBlockComment = true;
+      result += '  ';
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      inString = ch;
+      result += ' ';
+      continue;
+    }
+
+    result += ch;
+  }
+
+  return result;
+}
+
+function buildLineStarts(source: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] === '\n') starts.push(i + 1);
+  }
+  return starts;
+}
+
+function indexToLineCol(lineStarts: number[], index: number): { line: number; column: number } {
+  let lo = 0;
+  let hi = lineStarts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (lineStarts[mid] <= index) lo = mid;
+    else hi = mid - 1;
+  }
+  return { line: lo + 1, column: index - lineStarts[lo] + 1 };
+}
+
+const isIdentChar = (c: string | undefined): boolean => !!c && /[A-Za-z0-9_$]/.test(c);
+
+/**
+ * Detects `await` used inside a JS function (declaration, expression, or
+ * arrow) that isn't itself marked `async`. The engine wraps the whole
+ * script body in an implicit async function, so top-level `await` is
+ * always fine — but any function the user defines inside it (a
+ * forEach/map callback, a helper function, a curried arrow) needs its own
+ * `async` keyword. Getting this wrong throws a SyntaxError at compile
+ * time, before any of the script runs, and V8 attaches no line/column to
+ * that error at all — so this has to be caught here, statically, or the
+ * user just sees "await is only valid in async functions..." with no way
+ * to tell which line it's on.
+ *
+ * A function-body-opening '{' is identified purely by the token right
+ * before it: ')' (end of a parameter list, only when the word before that
+ * '(' is `function`) or '=>' (arrow). Any other preceding token is a
+ * plain block/object/destructuring brace and inherits its enclosing
+ * function's async-ness. Concise arrow bodies (no braces, e.g.
+ * `x => await f(x)`) are tracked separately since they never open a '{'.
+ * Object/class method shorthand (`foo() { ... }`) is not recognized as
+ * its own function boundary — a known miss (it inherits the enclosing
+ * scope instead), not a false positive.
+ */
+export function checkAwaitOutsideAsyncFunction(scriptBody: string): ScriptValidationError[] {
+  if (!scriptBody || scriptBody.indexOf('await') === -1) return [];
+
+  const masked = maskStringsAndComments(scriptBody);
+  const lineStarts = buildLineStarts(scriptBody);
+
+  function wordBefore(pos: number): { word: string; start: number } {
+    let j = pos - 1;
+    while (j >= 0 && /\s/.test(masked[j])) j--;
+    const end = j + 1;
+    while (j >= 0 && isIdentChar(masked[j])) j--;
+    return { word: masked.slice(j + 1, end), start: j + 1 };
+  }
+
+  // Mirrors the JS spec's "NamedEvaluation" — an otherwise-anonymous function
+  // or arrow still gets a usable name when it's the direct right-hand side of
+  // `const x = ...` / `x = ...` / an object property (`{ x: ... }`). `exprStart`
+  // is the leftmost position of the function expression itself (the start of
+  // `async`, or of `function`/the params if there's no `async`).
+  function inferAssignedName(exprStart: number): string | undefined {
+    let j = exprStart - 1;
+    while (j >= 0 && /\s/.test(masked[j])) j--;
+    if (j < 0) return undefined;
+
+    if (masked[j] === ':') {
+      // Object property shorthand: `{ name: (x) => { ... } }`
+      return wordBefore(j).word || undefined;
+    }
+
+    if (masked[j] === '=') {
+      // Rule out `==`, `=>`, and compound assignment (`+=`, `&&=`, etc.) —
+      // only a plain, standalone `=` names its right-hand side.
+      if (masked[j + 1] === '=' || masked[j + 1] === '>') return undefined;
+      let p = j - 1;
+      while (p >= 0 && /\s/.test(masked[p])) p--;
+      // Excludes compound assignment (`+=`, `&&=`, ...) and comparisons whose
+      // second character is this same '=' (`==`, `!=`, `<=`, `>=`).
+      if (p >= 0 && '+-*/%&|^<>!~='.includes(masked[p])) return undefined;
+      return wordBefore(j).word || undefined;
+    }
+
+    return undefined;
+  }
+
+  // `equalsPos` is the index of the '=' in this arrow's '=>'.
+  function analyzeArrowSignature(equalsPos: number): { isAsync: boolean; exprStart: number } {
+    let j = equalsPos - 1;
+    while (j >= 0 && /\s/.test(masked[j])) j--;
+    let paramsStart: number;
+    if (masked[j] === ')') {
+      let depth = 1;
+      let p = j - 1;
+      while (p >= 0 && depth > 0) {
+        if (masked[p] === ')') depth++;
+        else if (masked[p] === '(') depth--;
+        p--;
+      }
+      paramsStart = p + 1;
+    } else if (isIdentChar(masked[j])) {
+      let e = j;
+      while (e >= 0 && isIdentChar(masked[e])) e--;
+      paramsStart = e + 1;
+    } else {
+      return { isAsync: false, exprStart: equalsPos };
+    }
+    const before = wordBefore(paramsStart);
+    const isAsync = before.word === 'async';
+    return { isAsync, exprStart: isAsync ? before.start : paramsStart };
+  }
+
+  function classifyBrace(bracePos: number): { isAsync: boolean; name?: string; isArrow?: boolean } | null {
+    let k = bracePos - 1;
+    while (k >= 0 && /\s/.test(masked[k])) k--;
+    if (k < 0) return null;
+
+    // Arrow function block body: (...) => { or ident => {
+    if (masked[k] === '>' && masked[k - 1] === '=') {
+      const { isAsync, exprStart } = analyzeArrowSignature(k - 1);
+      return { isAsync, name: inferAssignedName(exprStart), isArrow: true };
+    }
+
+    // function keyword body: function name(...) { / function (...) { / function* (...) {
+    if (masked[k] === ')') {
+      let depth = 1;
+      let p = k - 1;
+      while (p >= 0 && depth > 0) {
+        if (masked[p] === ')') depth++;
+        else if (masked[p] === '(') depth--;
+        p--;
+      }
+      let q = p; // index right before the matching '('
+      while (q >= 0 && /\s/.test(masked[q])) q--;
+      if (masked[q] === '*') {
+        q--;
+        while (q >= 0 && /\s/.test(masked[q])) q--;
+      }
+
+      // The identifier immediately before '(' (or '*') is either the
+      // function's name, or — for an anonymous function — the word
+      // "function" itself (e.g. `function (x) {`, no name in between).
+      const identEnd = q + 1;
+      while (q >= 0 && isIdentChar(masked[q])) q--;
+      const identStart = q + 1;
+      const ident = masked.slice(identStart, identEnd);
+
+      if (ident === 'function') {
+        const asyncWord = wordBefore(identStart);
+        const isAsync = asyncWord.word === 'async';
+        const exprStart = isAsync ? asyncWord.start : identStart;
+        return { isAsync, name: inferAssignedName(exprStart) };
+      }
+
+      const before = wordBefore(identStart);
+      if (before.word === 'function') {
+        const isAsync = wordBefore(before.start).word === 'async';
+        return { isAsync, name: ident };
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  type ScopeFrame = {
+    isAsync: boolean;
+    kind: 'top' | 'function' | 'concise' | 'block';
+    name?: string;
+    pos?: number;
+    depthAtStart?: number;
+  };
+  const scopeStack: ScopeFrame[] = [{ isAsync: true, kind: 'top' }]; // the script's own top level is implicitly async
+  let containerDepth = 0;
+  const errors: ScriptValidationError[] = [];
+
+  function popConciseAtCurrentDepth(): void {
+    while (scopeStack.length > 1) {
+      const top = scopeStack[scopeStack.length - 1];
+      if (top.kind === 'concise' && top.depthAtStart === containerDepth) scopeStack.pop();
+      else break;
+    }
+  }
+
+  // Builds a synthetic "stack trace" for a flagged `await`: the chain of
+  // enclosing functions from innermost to outermost. There's no real call
+  // stack here — the script never ran — so this is assembled purely from
+  // the static scope nesting captured above, which is the only trace that
+  // actually exists for a compile-time SyntaxError.
+  function describeScopeChain(): string {
+    const frames: string[] = [];
+    for (let s = scopeStack.length - 1; s >= 0; s--) {
+      const frame = scopeStack[s];
+      if (frame.kind === 'block') continue;
+      if (frame.kind === 'top') {
+        frames.push('    at the script\'s top level');
+        continue;
+      }
+      const { line, column } = indexToLineCol(lineStarts, frame.pos!);
+      const label = frame.kind === 'concise'
+        ? frame.name ? `arrow function ${frame.name}` : 'arrow function'
+        : frame.name ? `function ${frame.name}` : 'anonymous function';
+      frames.push(`    at ${label} (Line ${line}:${column})`);
+    }
+    return frames.join('\n');
+  }
+
+  for (let i = 0; i < masked.length; i++) {
+    const ch = masked[i];
+
+    if (ch === '(' || ch === '[') {
+      containerDepth++;
+      continue;
+    }
+    if (ch === ')' || ch === ']') {
+      popConciseAtCurrentDepth();
+      containerDepth--;
+      continue;
+    }
+    if (ch === ',' || ch === ';') {
+      popConciseAtCurrentDepth();
+      continue;
+    }
+    if (ch === '{') {
+      const info = classifyBrace(i);
+      containerDepth++;
+      if (info) {
+        scopeStack.push({
+          isAsync: info.isAsync,
+          kind: info.isArrow ? 'concise' : 'function',
+          name: info.name,
+          pos: i,
+        });
+      } else {
+        scopeStack.push({ isAsync: scopeStack[scopeStack.length - 1].isAsync, kind: 'block' });
+      }
+      continue;
+    }
+    if (ch === '}') {
+      popConciseAtCurrentDepth();
+      containerDepth--;
+      if (scopeStack.length > 1) scopeStack.pop();
+      continue;
+    }
+    if (ch === '=' && masked[i + 1] === '>') {
+      let j = i + 2;
+      while (j < masked.length && /\s/.test(masked[j])) j++;
+      if (masked[j] !== '{') {
+        const { isAsync, exprStart } = analyzeArrowSignature(i);
+        scopeStack.push({
+          isAsync,
+          kind: 'concise',
+          pos: i,
+          depthAtStart: containerDepth,
+          name: inferAssignedName(exprStart),
+        });
+      }
+      i++; // consume '>' too
+      continue;
+    }
+    if (
+      ch === 'a' &&
+      masked.slice(i, i + 5) === 'await' &&
+      !isIdentChar(masked[i - 1]) &&
+      !isIdentChar(masked[i + 5])
+    ) {
+      if (!scopeStack[scopeStack.length - 1].isAsync) {
+        const { line, column } = indexToLineCol(lineStarts, i);
+        errors.push({
+          line,
+          column,
+          message:
+            "'await' is used inside a function that isn't marked async, so this will fail with a SyntaxError before the script runs. Add 'async', e.g. arr.forEach(async (x) => { await ... }).\n" +
+            describeScopeChain(),
+        });
+      }
+      i += 4; // consume the rest of 'await'
+      continue;
+    }
+  }
+
+  return errors;
+}
+
 /**
  * Validate a JavaScript script body for unawaited async vd calls.
  * Returns an array of errors (empty = valid).
@@ -369,6 +721,7 @@ export function validateScript(scriptBody: string): ScriptValidationError[] {
   if (!scriptBody || !scriptBody.trim()) return [];
 
   const errors: ScriptValidationError[] = [];
+  errors.push(...checkAwaitOutsideAsyncFunction(scriptBody));
   const lines = scriptBody.split('\n');
   let inBlockComment = false;
 
